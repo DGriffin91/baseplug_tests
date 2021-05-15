@@ -31,28 +31,21 @@ baseplug::model! {
         #[parameter(name = "kind", unit = "Generic",
             gradient = "Linear")]
         kind: f32,
-
-        #[model(min = -2.0, max = 0.0)]
-        #[parameter(name = "var", unit = "Generic",
-            gradient = "Linear")]
-        var: f32,
     }
 }
 
 impl Default for OnePoleModel {
     fn default() -> Self {
         Self {
-            // "gain" is converted from dB to coefficient in the parameter handling code,
-            // so in the model here it's a coeff.
-            // -0dB == 1.0
             gain: 1.0,
             kind: 1.0,
-            freq: 9000.0,
-            var: 0.0,
+            freq: 1000.0,
         }
     }
 }
 
+
+#[derive(Clone, Copy, Debug)]
 struct OnePoleCoeffs {
     a: f64,
     g: f64,
@@ -66,7 +59,7 @@ impl OnePoleCoeffs {
         let mut a1 = 0.0;
 
         match kind {
-            1 | 2 | 5 => {
+            1 | 2 | 5 | _ => {
                 // Low pass | High pass | All Pass
                 a = 1.0;
                 g = (PI * f0 / fs).tan();
@@ -84,13 +77,13 @@ impl OnePoleCoeffs {
                 g = (PI * f0 / fs).tan() * (a).sqrt();
                 a1 = g / (1.0 + g);
             }
-            _ => {}
         }
 
         OnePoleCoeffs { a, g, a1 }
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 struct OnePoleFilter {
     pub kind: u8,
     ic1eq: f64,
@@ -106,7 +99,7 @@ impl OnePoleFilter {
         }
     }
 
-    fn process(&mut self, input: f64, var: f64) -> f64 {
+    fn process(&mut self, input: f64) -> f64 {
         //http://www.willpirkle.com/Downloads/AN-4VirtualAnalogFilters.pdf (page 5)
         let v1 = self.coeffs.a1 * (input - self.ic1eq);
         let v2 = v1 + self.ic1eq;
@@ -150,14 +143,15 @@ impl OnePoleFilter {
 }
 
 struct OnePole {
-    filter_1: OnePoleFilter,
+    filter_l: OnePoleFilter,
+    filter_r: OnePoleFilter,
     sample_rate: f64,
 }
 
 impl Plugin for OnePole {
-    const NAME: &'static str = "basic gain plug";
-    const PRODUCT: &'static str = "basic gain plug";
-    const VENDOR: &'static str = "spicy plugins & co";
+    const NAME: &'static str = "basic one pole filter";
+    const PRODUCT: &'static str = "basic one pole filter";
+    const VENDOR: &'static str = "DGriffin91";
 
     const INPUT_CHANNELS: usize = 2;
     const OUTPUT_CHANNELS: usize = 2;
@@ -167,7 +161,13 @@ impl Plugin for OnePole {
     #[inline]
     fn new(sample_rate: f32, model: &OnePoleModel) -> Self {
         OnePole {
-            filter_1: OnePoleFilter::new(
+            filter_l: OnePoleFilter::new(
+                model.kind as u8,
+                sample_rate as f64,
+                model.freq as f64,
+                model.gain as f64,
+            ),
+            filter_r: OnePoleFilter::new(
                 model.kind as u8,
                 sample_rate as f64,
                 model.freq as f64,
@@ -184,19 +184,24 @@ impl Plugin for OnePole {
 
         for i in 0..ctx.nframes {
             let kind = model.kind[i] as u8;
-            self.filter_1.coeffs = OnePoleCoeffs::new(
+            self.filter_l.coeffs = OnePoleCoeffs::new(
                 kind,
                 self.sample_rate,
                 model.freq[i] as f64,
                 model.gain[i] as f64,
             );
-            self.filter_1.kind = kind;
+            self.filter_l.kind = kind;
+            self.filter_r.coeffs = self.filter_l.coeffs;
+            self.filter_r.kind = kind;
 
             let l = input[0][i] as f64;
+            let r = input[1][i] as f64;
 
-            let l = self.filter_1.process(l, model.var[i] as f64);
+            let l = self.filter_l.process(l);
+            let r = self.filter_r.process(r);
 
             output[0][i] = l as f32;
+            output[1][i] = r as f32;
         }
     }
 }
