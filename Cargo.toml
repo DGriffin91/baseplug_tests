@@ -1,0 +1,18 @@
+[package]
+name = "baseplug-tests"
+version = "0.1.0"
+authors = ["DGriffin91 <github@dgdigital.net>"]
+edition = "2018"
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace]
+members =[
+    "gain",
+    "dynsat",
+    "varb",
+    "onepole",
+]
+
+[dependencies]
